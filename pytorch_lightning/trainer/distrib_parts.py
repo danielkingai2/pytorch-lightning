@@ -685,7 +685,7 @@ def get_all_available_gpus():
     :return: a list of all available gpus
     """
     if "CUDA_VISIBLE_DEVICES" in os.environ:
-        return ",".split(os.environ["CUDA_VISIBLE_DEVICES"])
+        return os.environ["CUDA_VISIBLE_DEVICES"].split(",")
     else:
         return list(range(torch.cuda.device_count()))
 
