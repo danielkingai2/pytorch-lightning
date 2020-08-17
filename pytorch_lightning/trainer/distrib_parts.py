@@ -435,28 +435,28 @@ class TrainerDPMixin(ABC):
             m._device = self._device
 
     def transfer_batch_to_tpu(self, batch):
-        return self.__transfer_data_to_device(batch, device='tpu')
+        return self.__transfer_data_to_device(batch, device="tpu")
 
     def transfer_batch_to_gpu(self, batch, gpu_id):
-        return self.__transfer_data_to_device(batch, device='gpu', gpu_id=gpu_id)
+        return self.__transfer_data_to_device(batch, device="gpu", gpu_id=gpu_id)
 
     def __transfer_data_to_device(self, batch, device, gpu_id=None):
-        if device == 'tpu' and XLA_AVAILABLE:
+        if device == "tpu" and XLA_AVAILABLE:
             # base case: object can be directly moved using `to`
-            if callable(getattr(batch, 'to', None)):
+            if callable(getattr(batch, "to", None)):
                 return batch.to(xm.xla_device())
 
-        if device == 'gpu':
+        if device == "gpu":
             # base case: object can be directly moved using `cuda` or `to`
-            if callable(getattr(batch, 'cuda', None)):
+            if callable(getattr(batch, "cuda", None)):
                 # non_blocking will be ignored if tensor is not pinned.
                 # so we can always set it to True
                 return batch.cuda(gpu_id, non_blocking=True)
 
-            if callable(getattr(batch, 'to', None)):
+            if callable(getattr(batch, "to", None)):
                 # non_blocking will be ignored if tensor is not pinned.
                 # so we can always set it to True
-                return batch.to(torch.device('cuda', gpu_id), non_blocking=True)
+                return batch.to(torch.device("cuda", gpu_id), non_blocking=True)
 
         # when list
         if isinstance(batch, list):
@@ -467,9 +467,11 @@ class TrainerDPMixin(ABC):
         # when tuple
         if isinstance(batch, tuple):
             # when namedtuple
-            if hasattr(batch, '_fields'):
+            if hasattr(batch, "_fields"):
                 elem_type = type(batch)
-                return elem_type(*(self.__transfer_data_to_device(x, device, gpu_id) for x in batch))
+                return elem_type(
+                    *(self.__transfer_data_to_device(x, device, gpu_id) for x in batch)
+                )
             else:
                 batch = list(batch)
                 for i, x in enumerate(batch):
@@ -488,16 +490,22 @@ class TrainerDPMixin(ABC):
 
     def single_gpu_train(self, model):
         model.cuda(self.root_gpu)
-        self._device = torch.device('cuda', self.root_gpu)
+        self._device = torch.device("cuda", self.root_gpu)
 
         # CHOOSE OPTIMIZER
         # allow for lr schedulers as well
-        self.optimizers, self.lr_schedulers, self.optimizer_frequencies = self.init_optimizers(model)
+        (
+            self.optimizers,
+            self.lr_schedulers,
+            self.optimizer_frequencies,
+        ) = self.init_optimizers(model)
 
         # TODO: update for 0.8.0
         if self.use_amp and not self.use_native_amp:
             # An example
-            model, optimizers = model.configure_apex(amp, model, self.optimizers, self.amp_level)
+            model, optimizers = model.configure_apex(
+                amp, model, self.optimizers, self.amp_level
+            )
             self.optimizers = optimizers
 
         self.run_pretrain_routine(model)
@@ -522,14 +530,20 @@ class TrainerDPMixin(ABC):
 
         # CHOOSE OPTIMIZER
         # allow for lr schedulers as well
-        self.optimizers, self.lr_schedulers, self.optimizer_frequencies = self.init_optimizers(model)
+        (
+            self.optimizers,
+            self.lr_schedulers,
+            self.optimizer_frequencies,
+        ) = self.init_optimizers(model)
 
         # init 16 bit for TPU
         if self.precision == 16:
-            os.environ['XLA_USE_BF16'] = str(1)
+            os.environ["XLA_USE_BF16"] = str(1)
 
-        log.info(f'INIT TPU local core: {self.tpu_local_core_rank},'
-                 f' global rank: {self.tpu_global_core_rank}')
+        log.info(
+            f"INIT TPU local core: {self.tpu_local_core_rank},"
+            f" global rank: {self.tpu_global_core_rank}"
+        )
 
         # continue training routine
         self.run_pretrain_routine(model)
@@ -542,10 +556,14 @@ class TrainerDPMixin(ABC):
 
         # CHOOSE OPTIMIZER
         # allow for lr schedulers as well
-        self.optimizers, self.lr_schedulers, self.optimizer_frequencies = self.init_optimizers(model)
+        (
+            self.optimizers,
+            self.lr_schedulers,
+            self.optimizer_frequencies,
+        ) = self.init_optimizers(model)
 
         model.cuda(self.root_gpu)
-        self._device = torch.device('cuda', self.root_gpu)
+        self._device = torch.device("cuda", self.root_gpu)
 
         # hack forward to do autocast for the user
         model_autocast_original_forward = model.forward
@@ -557,13 +575,16 @@ class TrainerDPMixin(ABC):
         # check for this bug (amp + dp + !01 doesn't work)
         # https://github.com/NVIDIA/apex/issues/227
         if self.use_dp and self.use_amp and not self.use_native_amp:
-            if self.amp_level == 'O2':
+            if self.amp_level == "O2":
                 raise MisconfigurationException(
-                    f'Amp level {self.amp_level} with DataParallel is not supported.'
-                    f' See this note from NVIDIA for more info: https://github.com/NVIDIA/apex/issues/227.'
-                    f' We recommend you switch to ddp if you want to use amp')
+                    f"Amp level {self.amp_level} with DataParallel is not supported."
+                    f" See this note from NVIDIA for more info: https://github.com/NVIDIA/apex/issues/227."
+                    f" We recommend you switch to ddp if you want to use amp"
+                )
             else:
-                model, optimizers = model.configure_apex(amp, model, self.optimizers, self.amp_level)
+                model, optimizers = model.configure_apex(
+                    amp, model, self.optimizers, self.amp_level
+                )
 
         # create list of device ids
         device_ids = self.data_parallel_device_ids
@@ -585,7 +606,7 @@ class TrainerDPMixin(ABC):
             assert self.root_gpu == hvd.local_rank()
             torch.cuda.set_device(self.root_gpu)
             model.cuda(self.root_gpu)
-            self._device = torch.device('cuda', self.root_gpu)
+            self._device = torch.device("cuda", self.root_gpu)
 
         # avoid duplicating progress bar
         if hvd.rank() != 0 and self.progress_bar_callback is not None:
@@ -593,17 +614,23 @@ class TrainerDPMixin(ABC):
 
         # CHOOSE OPTIMIZER
         # allow for lr schedulers as well
-        self.optimizers, self.lr_schedulers, self.optimizer_frequencies = self.init_optimizers(model)
+        (
+            self.optimizers,
+            self.lr_schedulers,
+            self.optimizer_frequencies,
+        ) = self.init_optimizers(model)
 
         # Horovod: scale the learning rate by the number of workers to account for
         # increased total batch size
         for optimizer in self.optimizers:
             for param_group in optimizer.param_groups:
-                param_group['lr'] *= hvd.size()
+                param_group["lr"] *= hvd.size()
 
         if self.use_amp:
             # An example
-            model, optimizers = model.configure_apex(amp, model, self.optimizers, self.amp_level)
+            model, optimizers = model.configure_apex(
+                amp, model, self.optimizers, self.amp_level
+            )
             self.optimizers = optimizers
 
         # Horovod: broadcast parameters & optimizer state to ensure consistent initialization
@@ -612,12 +639,18 @@ class TrainerDPMixin(ABC):
             hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
         def filter_named_parameters(model, optimizer):
-            opt_params = set([p for group in optimizer.param_groups for p in group.get('params', [])])
-            return [(name, p) for name, p in model.named_parameters() if p in opt_params]
+            opt_params = set(
+                [p for group in optimizer.param_groups for p in group.get("params", [])]
+            )
+            return [
+                (name, p) for name, p in model.named_parameters() if p in opt_params
+            ]
 
         # Horovod: wrap optimizers to perform gradient aggregation via allreduce
         self.optimizers = [
-            hvd.DistributedOptimizer(optimizer, named_parameters=filter_named_parameters(model, optimizer))
+            hvd.DistributedOptimizer(
+                optimizer, named_parameters=filter_named_parameters(model, optimizer)
+            )
             for optimizer in self.optimizers
         ]
 
@@ -639,10 +672,10 @@ class TrainerDPMixin(ABC):
 
 def normalize_parse_gpu_string_input(s):
     if isinstance(s, str):
-        if s == '-1':
+        if s == "-1":
             return -1
         else:
-            return [int(x.strip()) for x in s.split(',') if len(x) > 0]
+            return [int(x.strip()) for x in s.split(",") if len(x) > 0]
     else:
         return s
 
@@ -651,7 +684,10 @@ def get_all_available_gpus():
     """
     :return: a list of all available gpus
     """
-    return list(range(torch.cuda.device_count()))
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        return ",".split(os.environ["CUDA_VISIBLE_DEVICES"])
+    else:
+        return list(range(torch.cuda.device_count()))
 
 
 def check_gpus_data_type(gpus):
@@ -662,8 +698,12 @@ def check_gpus_data_type(gpus):
     :return: return unmodified gpus variable
     """
 
-    if gpus is not None and (not isinstance(gpus, (int, str, list)) or isinstance(gpus, bool)):
-        raise MisconfigurationException("GPUs must be int, string or list of ints or None.")
+    if gpus is not None and (
+        not isinstance(gpus, (int, str, list)) or isinstance(gpus, bool)
+    ):
+        raise MisconfigurationException(
+            "GPUs must be int, string or list of ints or None."
+        )
 
 
 def normalize_parse_gpu_input_to_list(gpus):
@@ -690,10 +730,12 @@ def sanitize_gpu_ids(gpus):
     all_available_gpus = get_all_available_gpus()
     for gpu in gpus:
         if gpu not in all_available_gpus:
-            raise MisconfigurationException(f"""
+            raise MisconfigurationException(
+                f"""
                 You requested GPUs: {gpus}
                 But your machine only has: {all_available_gpus}
-            """)
+            """
+            )
     return gpus
 
 
@@ -754,9 +796,9 @@ def determine_root_gpu_device(gpus):
 def retry_jittered_backoff(f, num_retries=5):
     # Based on:
     # https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
-    cap = 1.0                  # max sleep time is 1s
-    base = 0.01                # initial sleep time is 10ms
-    sleep = base               # initial sleep time is 10ms
+    cap = 1.0  # max sleep time is 1s
+    base = 0.01  # initial sleep time is 10ms
+    sleep = base  # initial sleep time is 10ms
 
     for i in range(num_retries):
         try:
